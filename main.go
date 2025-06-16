@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	targetAddress   = "192.168.88.73:9999" 
+	targetAddress   = "localhost:9999" 
 	concurrentUsers = 20
 	totalRequests   = 100
 	timeout         = 20 * time.Second
@@ -34,47 +34,7 @@ func callService(client pb.RpcIntegratorClient, idx int) Result {
 
 	start := time.Now()
 
-	req := []byte(`{
-			"mandatoryRequest": {
-				"channelID": "DESKTOP",
-				"requestID": "test_webbeds_prod_1",
-				"serviceID": "gateway",
-				"identity": "",
-				"accountID": "",
-				"username": "1",
-				"currency": "IDR",
-				"storeID": "TIKETCOM",
-				"resellerID": "",
-				"businessID": "1",
-				"loginMedia": "chrome",
-				"forwardedFor": "127.0.0.1",
-				"trueClientIP": "127.0.0.1",
-				"language": "en",
-				"login": 1,
-				"isVerifiedPhoneNumber": "",
-				"loyaltyLevel": "",
-				"resellerType" : ""
-			},
-			"hotelAvailabilityRequest": {
-				"hotelIds": {
-				"449255": "449255"
-				},
-				"startDate": "2025-06-17",
-				"endDate": "2025-06-18",
-				"numberOfNights": 1,
-				"numberOfRooms": 1,
-				"numberOfAdults": 1,
-				"numberOfChildren": 0,
-				"childrenAge": [],
-				"vendor": "WEBBEDS",
-				"packageRate": 0,
-				"rateKeyMapping": [
-				{
-					"rateKeyType": "member_rate"
-				}
-				]
-			}
-		}`)
+	req := []byte(``)
 
 	var user pb.HotelAvailPriceRequest
 	err := json.Unmarshal(req, &user)
