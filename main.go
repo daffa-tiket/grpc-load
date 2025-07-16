@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,15 +11,16 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 
 	pb "github.com/tiket/TIX-COMMON-GO/price_integrator"
 )
 
 const (
-	targetAddress   = "localhost:9999" 
-	concurrentUsers = 20
-	totalRequests   = 100
-	timeout         = 20 * time.Second
+	targetAddress   = "hotel-integrator-framework-webbeds-svc-grpc.prod-hotel-cluster.tiket.com:443" 
+	totalRequests   = 250000
+	concurrentUsers = 1000
+	timeout         = 2500 * time.Millisecond
 )
 
 type Result struct {
@@ -34,7 +36,44 @@ func callService(client pb.RpcIntegratorClient, idx int) Result {
 
 	start := time.Now()
 
-	req := []byte(``)
+	req := []byte(`{
+  "mandatoryRequest": {
+    "storeID": "TIKETCOM",
+    "channelID": "DESKTOP",
+    "requestID": "test_agoda_avail",
+    "serviceID": "gateway",
+    "accountID": "16124",
+    "username": "norma.puspitasari@tiket.com",
+    "currency": "IDR",
+    "businessID": "1",
+    "loginMedia": "GOOGLE",
+    "forwardedFor": "127.0.0.1",
+    "trueClientIP": "127.0.0.1",
+    "language": "en",
+    "login": 1,
+    "isVerifiedPhoneNumber": "0",
+    "loyaltyLevel": "LV4",
+    "countryID": "en"
+  },
+  "hotelAvailabilityRequest": {
+    "hotelIds": {
+      "5291445": "5291445"
+    },
+    "startDate": "2025-10-23",
+    "endDate": "2025-10-24",
+    "numberOfNights": 1,
+    "numberOfRooms": 1,
+    "numberOfAdults": 1,
+    "vendor": "WEBBEDS",
+    "localTimezone": "+07:00",
+    "rateKeyMapping": [
+      {
+        "rateKeyType": "member_rate"
+      }
+    ]
+  },
+  "route": "hotel-list"
+}`)
 
 	var user pb.HotelAvailPriceRequest
 	err := json.Unmarshal(req, &user)
@@ -67,7 +106,10 @@ func worker(wg *sync.WaitGroup, client pb.RpcIntegratorClient, jobs <-chan int, 
 }
 
 func main() {
-	conn, err := grpc.Dial(targetAddress, grpc.WithInsecure())
+	creds := credentials.NewTLS(&tls.Config{
+				InsecureSkipVerify: true,
+			})
+	conn, err := grpc.Dial(targetAddress, grpc.WithTransportCredentials(creds))
 	if err != nil {
 		log.Fatalf("failed connect: %v", err)
 	}
@@ -102,11 +144,22 @@ func main() {
 	})
 
 	fmt.Println("\n📊 Latency per Request:")
+	var okCount, failCount int
 	for _, r := range allResults {
 		status := "OK"
 		if r.Error != nil {
 			status = r.Error.Error()
+			failCount++
+		} else {
+			okCount++
 		}
 		fmt.Printf("Request #%03d | Latency: %-10v | Status: %s\n", r.Index, r.Latency, status)
 	}
+
+	total := okCount + failCount
+	okPercent := float64(okCount) / float64(total) * 100
+	failPercent := float64(failCount) / float64(total) * 100
+
+	fmt.Printf("\n✅ Sukses: %d (%.2f%%)\n", okCount, okPercent)
+	fmt.Printf("❌ Gagal : %d (%.2f%%)\n", failCount, failPercent)
 }
