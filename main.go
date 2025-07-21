@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
+	//"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -11,16 +11,31 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
+	//"google.golang.org/grpc/credentials"
 
 	pb "github.com/tiket/TIX-COMMON-GO/price_integrator"
 )
 
+// const (
+// 	targetAddress     = "192.168.88.91:9999"
+// 	timeout           = 5000 * time.Millisecond
+// 	testDuration      = 5 * time.Minute
+// 	initialRPS        = 0
+// 	maxRPS            = 500
+// 	stepRPS           = 100
+// 	stepDuration      = 1 * time.Minute
+// 	concurrentWorkers = 1300 
+// )
+
 const (
-	targetAddress   = "hotel-integrator-framework-webbeds-svc-grpc.prod-hotel-cluster.tiket.com:443" 
-	totalRequests   = 250000
-	concurrentUsers = 1000
-	timeout         = 2500 * time.Millisecond
+	targetAddress     = "192.168.88.91:9999"
+	timeout           = 5000 * time.Millisecond
+	testDuration      = 5 * time.Minute
+	initialRPS        = 0          
+	maxRPS            = 17        
+	stepRPS           = 5           
+	stepDuration      = 1 * time.Minute
+	concurrentWorkers = 100         
 )
 
 type Result struct {
@@ -36,44 +51,7 @@ func callService(client pb.RpcIntegratorClient, idx int) Result {
 
 	start := time.Now()
 
-	req := []byte(`{
-  "mandatoryRequest": {
-    "storeID": "TIKETCOM",
-    "channelID": "DESKTOP",
-    "requestID": "test_agoda_avail",
-    "serviceID": "gateway",
-    "accountID": "16124",
-    "username": "norma.puspitasari@tiket.com",
-    "currency": "IDR",
-    "businessID": "1",
-    "loginMedia": "GOOGLE",
-    "forwardedFor": "127.0.0.1",
-    "trueClientIP": "127.0.0.1",
-    "language": "en",
-    "login": 1,
-    "isVerifiedPhoneNumber": "0",
-    "loyaltyLevel": "LV4",
-    "countryID": "en"
-  },
-  "hotelAvailabilityRequest": {
-    "hotelIds": {
-      "5291445": "5291445"
-    },
-    "startDate": "2025-10-23",
-    "endDate": "2025-10-24",
-    "numberOfNights": 1,
-    "numberOfRooms": 1,
-    "numberOfAdults": 1,
-    "vendor": "WEBBEDS",
-    "localTimezone": "+07:00",
-    "rateKeyMapping": [
-      {
-        "rateKeyType": "member_rate"
-      }
-    ]
-  },
-  "route": "hotel-list"
-}`)
+	req := []byte(``)
 
 	var user pb.HotelAvailPriceRequest
 	err := json.Unmarshal(req, &user)
@@ -100,41 +78,61 @@ func callService(client pb.RpcIntegratorClient, idx int) Result {
 func worker(wg *sync.WaitGroup, client pb.RpcIntegratorClient, jobs <-chan int, results chan<- Result) {
 	defer wg.Done()
 	for idx := range jobs {
-		res := callService(client, idx)
-		results <- res
+		results <- callService(client, idx)
 	}
 }
 
 func main() {
-	creds := credentials.NewTLS(&tls.Config{
-				InsecureSkipVerify: true,
-			})
-	conn, err := grpc.Dial(targetAddress, grpc.WithTransportCredentials(creds))
+	//creds := credentials.NewTLS(&tls.Config{InsecureSkipVerify: true})
+	conn, err := grpc.Dial(targetAddress, grpc.WithInsecure())
 	if err != nil {
-		log.Fatalf("failed connect: %v", err)
+		log.Fatalf("Gagal connect ke GRPC: %v", err)
 	}
 	defer conn.Close()
 
 	client := pb.NewRpcIntegratorClient(conn)
 
-	jobs := make(chan int, totalRequests)
-	results := make(chan Result, totalRequests)
+	jobs := make(chan int)
+	results := make(chan Result, 1000000)
 
 	var wg sync.WaitGroup
-	for i := 0; i < concurrentUsers; i++ {
+	for i := 0; i < concurrentWorkers; i++ {
 		wg.Add(1)
 		go worker(&wg, client, jobs, results)
 	}
 
-	for i := 0; i < totalRequests; i++ {
-		jobs <- i
-	}
-	close(jobs)
+	go func() {
+		defer close(jobs)
+
+		start := time.Now()
+		i := 0
+		currentRPS := initialRPS
+		lastStepTime := time.Now()
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		for time.Since(start) < testDuration {
+			<-ticker.C
+			for j := 0; j < currentRPS; j++ {
+				jobs <- i
+				i++
+			}
+
+			if time.Since(lastStepTime) >= stepDuration && currentRPS < maxRPS {
+				currentRPS += stepRPS
+				if currentRPS > maxRPS {
+					currentRPS = maxRPS
+				}
+				fmt.Printf("🚀 Ramping up... current RPS: %d\n", currentRPS)
+				lastStepTime = time.Now()
+			}
+		}
+	}()
 
 	wg.Wait()
 	close(results)
 
-	allResults := make([]Result, 0, totalRequests)
+	allResults := make([]Result, 0, 1000000)
 	for res := range results {
 		allResults = append(allResults, res)
 	}
@@ -153,7 +151,7 @@ func main() {
 		} else {
 			okCount++
 		}
-		fmt.Printf("Request #%03d | Latency: %-10v | Status: %s\n", r.Index, r.Latency, status)
+		fmt.Printf("Request #%06d | Latency: %-10v | Status: %s\n", r.Index, r.Latency, status)
 	}
 
 	total := okCount + failCount
@@ -162,4 +160,5 @@ func main() {
 
 	fmt.Printf("\n✅ Sukses: %d (%.2f%%)\n", okCount, okPercent)
 	fmt.Printf("❌ Gagal : %d (%.2f%%)\n", failCount, failPercent)
+	fmt.Printf("📈 Total Requests Dikirim: %d\n", total)
 }
