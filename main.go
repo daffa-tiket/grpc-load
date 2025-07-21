@@ -17,7 +17,7 @@ import (
 )
 
 // const (
-// 	targetAddress     = "192.168.88.91:9999"
+// 	targetAddress     = ""
 // 	timeout           = 5000 * time.Millisecond
 // 	testDuration      = 5 * time.Minute
 // 	initialRPS        = 0
@@ -28,7 +28,7 @@ import (
 // )
 
 const (
-	targetAddress     = "192.168.88.91:9999"
+	targetAddress     = ""
 	timeout           = 5000 * time.Millisecond
 	testDuration      = 5 * time.Minute
 	initialRPS        = 0          
